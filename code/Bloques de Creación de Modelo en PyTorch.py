@@ -82,5 +82,36 @@ class ModeloRegresionLineal(nn.Module):
         super().__init__()
         self.volumen=nn.Parameter(torch.randn(1, requires_grad=True, dtype=torch.float))
         self.bias=nn.Parameter(torch.randn(1, requires_grad=True, dtype=torch.float))
+         
     def forward(self, x:torch.Tensor)->torch.Tensor:
         return self.volumen * x + self.bias
+    
+torch.manual_seed(42)
+# Crea un objeto instanciando la clase ModeloRegresionLineal
+
+model_1 = ModeloRegresionLineal()
+model_1
+
+model_1.state_dict()
+# %% [markdown]
+# Hacer predicciones con el modelo
+with torch.inference_mode():
+  y_predc = model_1(X_prueb)
+
+y_predc
+# %% [markdown]
+plot_predictions(predictions=y_predc)
+# %% [markdown]
+# ## Entrenamiento
+# Crea función de pérdida
+fn_perd = torch.nn.L1Loss()
+
+# Crea el optimizador
+optimizador = torch.optim.SGD(params=model_1.parameters(), lr=0.01)
+optimizador
+
+# %%
+model_1.parameters()
+# %% [markdown]
+# ## Bluche de Entrenamiento
+epochs=100

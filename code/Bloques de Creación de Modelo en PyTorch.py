@@ -114,4 +114,15 @@ optimizador
 model_1.parameters()
 # %% [markdown]
 # ## Bluche de Entrenamiento
+torch.manual_seed(42)
 epochs=100
+# Bucle de entrenamiento
+trainin_loos=[]
+test_loss = []
+for epoch in range(epochs):
+    # Poner el modelo en modo entrenamiento
+    model_1.train()
+    # Forward pass
+    y_predc=model_1(x_ent)
+    # 
+

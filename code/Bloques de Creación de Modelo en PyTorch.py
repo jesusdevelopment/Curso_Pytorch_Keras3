@@ -115,14 +115,54 @@ model_1.parameters()
 # %% [markdown]
 # ## Bluche de Entrenamiento
 torch.manual_seed(42)
-epochs=100
+epochs=260
 # Bucle de entrenamiento
-trainin_loos=[]
+training_loos=[]
 test_loss = []
+
 for epoch in range(epochs):
     # Poner el modelo en modo entrenamiento
     model_1.train()
     # Forward pass
-    y_predc=model_1(x_ent)
-    # 
+    y_predc=model_1(X_ent)
+    # Loos function
+    perdida = fn_perd(y_predc, y_ent)
+    # Optimizador zero grad
+    optimizador.zero_grad()
+    # Backpropagation
+    perdida.backward()
+    # Paso del optimizador
+    optimizador.step()
+    # Evaluación
+    model_1.eval()
+    with torch.inference_mode():
+        #Reenvio de Datos de Prueba
+        test_pred = model_1(X_prueb)
+        # Calculo de la perdida de prueba
+        test_perdida = fn_perd(test_pred, y_prueb.type(torch.float))
 
+        if epoch % 10 == 0:
+            training_loos.append(perdida.item())
+            test_loss.append(test_perdida.item())
+            print(f"Epoch: {epoch} | Perdida: {perdida:.5f} | Perdida Prueba: {test_perdida:.5f}")
+# %%[markdown]
+# ## Graficación de Pérdidas
+#plt.plot(training_loos, test_loss)
+plt.plot(training_loos, label="Pérdida de Entrenamiento")
+plt.plot(test_loss, label="Pérdida de Prueba")
+plt.ylabel("Pérdida")
+plt.xlabel("Epochs")
+plt.legend()
+plt.show()
+# %% [markdown]
+# ## Inferencias
+
+model_1.eval()
+with torch.inference_mode():
+    y_preds = model_1(X_prueb)
+    print(f"Predicciones: {y_preds}")
+    # Visualización de las predicciones
+    plot_predictions(predictions=y_preds)
+    
+
+# %%

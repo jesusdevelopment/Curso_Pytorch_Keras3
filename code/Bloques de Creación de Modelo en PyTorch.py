@@ -162,7 +162,6 @@ with torch.inference_mode():
     y_preds = model_1(X_prueb)
     print(f"Predicciones: {y_preds}")
     # Visualización de las predicciones
-    plot_predictions(predictions=y_preds)
-    
+    plot_predictions(predictions=y_preds)  
 
 # %%

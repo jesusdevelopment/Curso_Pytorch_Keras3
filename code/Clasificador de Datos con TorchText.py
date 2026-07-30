@@ -1,7 +1,7 @@
 # %% [markdown]
 # ## 1. Instalación e Importación de Bibliotecas
 !pip install --upgrade --force-reinstall fsspec datasets huggingface_hub
-
+ 
 # %% [markdown]
 # ## 2. Importaciones y Configuración de Dispositivo
 import time
@@ -20,7 +20,11 @@ print(f'Usando el dispositivo: {device}')
 # ## 3. Carga y Exploración del Dataset
 dataset = load_dataset("fancyzhx/dbpedia_14")
 
-# Separamos train en Entrenamiento (90%) y Validación (10%)
+# ## Exploración del Dataset
+# 1. Ver qué splits/sets existen
+print("Splits disponibles:", dataset.keys())
+
+# 2. Separamos train en Entrenamiento (90%) y Validación (10%)
 train_val_split = dataset["train"].train_test_split(test_size=0.1, seed=42)
 train_data = train_val_split["train"]
 valid_data = train_val_split["test"]
@@ -30,10 +34,41 @@ print(f"Train: {len(train_data):,} ejemplos")
 print(f"Valid: {len(valid_data):,} ejemplos")
 print(f"Test:  {len(test_data):,} ejemplos")
 
+# 3. Imprimir la estructura global del objeto
+print(dataset)
+
+# 4. Ver los nombres de los atributos/columnas
+print("Columnas:", dataset["train"].column_names)
+
+# 5. Ver la estructura detallada y tipos de datos (features)
+print("Features:", dataset["train"].features)
+
+# 6. Obtener el nombre textual de cada clase/etiqueta (0 a 13)
 etiquetas = dataset["train"].features["label"].names
 print("\nCategorías de clasificación (0 al 13):")
 for idx, nombre in enumerate(etiquetas):
     print(f"  {idx}: {nombre}")
+
+# %% [markdown]
+# 8. Primer ejemplo
+primer_ejemplo = dataset["train"][0]
+print("\nAtributos del primer ejemplo:", list(primer_ejemplo.keys()))
+print(f"Etiqueta (Label): {primer_ejemplo['label']}")
+print(f"Título: {primer_ejemplo['title']}")
+print(f"Texto: {primer_ejemplo['content'][:120]}...")
+print("Ejemplo completo:")
+print(primer_ejemplo)
+
+
+# 9. Segundo ejemplo
+segundo_ejemplo = dataset["train"][48954]
+print("\nAtributos del segundo ejemplo:", list(segundo_ejemplo.keys()))
+print(f"Etiqueta (Label): {segundo_ejemplo['label']}")
+print(f"Título: {segundo_ejemplo['title']}")
+print(f"Texto: {segundo_ejemplo['content'][:120]}...")
+print("Ejemplo completo:")
+print(segundo_ejemplo)
+
 
 # %% [markdown]
 # ## 4. Tokenizador y Construcción del Vocabulario
@@ -201,8 +236,15 @@ for epoch in range(1, EPOCHS + 1):
 
     if valid_loss < best_valid_loss:
         best_valid_loss = valid_loss
-        torch.save(modelo.state_dict(), "mejores_guardados.pt")
-        print(f"  --> ¡Nuevo mejor modelo guardado! (Val Loss: {best_valid_loss:.4f})")
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': modelo.state_dict(),
+            'optimizer_state_dic  t': optimizer.state_dict(),
+            'loss': valid_loss,
+            'acc': valid_acc
+        }
+        torch.save(checkpoint, "checkpoint_mejor_modelo.pt")
+        print(f"  --> ¡Nuevo mejor checkpoint guardado! (Val Loss: {best_valid_loss:.4f})")
 
     elapsed = time.time() - start_time
     print(f"Época {epoch:2d} | Tiempo: {elapsed:5.2f}s | "
@@ -210,14 +252,17 @@ for epoch in range(1, EPOCHS + 1):
           f"Val Loss: {valid_loss:.4f} | Val Acc: {valid_acc*100:.2f}%")
 
 # %% [markdown]
-# ## 10. Evaluación en el Conjunto de Prueba (Test)
-modelo.load_state_dict(torch.load("mejores_guardados.pt"))
+# ## 10. Carga del Checkpoint y Evaluación en Test
+print("\nCargando el mejor checkpoint registrado...")
+checkpoint = torch.load("checkpoint_mejor_modelo.pt")
+modelo.load_state_dict(checkpoint['model_state_dict'])
+
 test_loss, test_acc = evaluate(modelo, test_dataloader, criterion)
 print(f"\n--- Resultado Final en Test ---")
 print(f"Test Loss: {test_loss:.4f} | Test Acc: {test_acc*100:.2f}%")
 
 # %% [markdown]
-# ## 11. Función e Inferencia
+# ## 11. Función de Inferencia con `torch.compile`
 DBPEDIA_LABELS = {
     1: 'Company', 2: 'EducationalInstitution', 3: 'Artist', 4: 'Athlete',
     5: 'OfficeHolder', 6: 'MeanOfTransportation', 7: 'Building',
@@ -229,7 +274,7 @@ DBPEDIA_LABELS = {
 modelo.to("cpu")
 modelo.eval()
 
-# Compilación única previa
+# Compilación previa única
 compiled_model = torch.compile(modelo, mode="reduce-overhead")
 
 def predict(texto, text_pipeline, model, labels_dict):
@@ -251,4 +296,40 @@ ejemplo_2 = "The Boeing 747 is a large, long-range wide-body airliner manufactur
 print("\n--- Resultados de Inferencia ---")
 print(f"Ejemplo 1 -> Predicción: {predict(ejemplo_1, texto_pipeline, compiled_model, DBPEDIA_LABELS)}")
 print(f"Ejemplo 2 -> Predicción: {predict(ejemplo_2, texto_pipeline, compiled_model, DBPEDIA_LABELS)}")
+# %% [markdown]
+# ## 12. Subida de Modelo a `Hugging face`
+# Para subir el modelo a Hugging Face, primero debemos asegurarnos de tener instalada la librería `huggingface_hub`
+!pip install huggingface_hub
+from huggingface_hub import notebook_login
+notebook_login()
+# %% [markdown]
+# ## 13. Creación de Repositorio y subida del modelo
+from huggingface_hub import HfApi
+
+api = HfApi()
+api.create_repo(repo_id="jesusromerodev/clasificacion-DBpedia-jesus-romero", exist_ok=True)
+
+!ls
+# Salida esperada: checkpoint_mejor_modelo.pt  sample_data
+
+api.upload_file(
+    path_or_fileobj="./checkpoint_mejor_modelo.pt",
+    path_in_repo="checkpoint_mejor_modelo.pt",
+    repo_id="jesusromerodev/clasificacion-DBpedia-jesus-romero"
+)
+# %% [markdown]
+# ## 14. Descarga de modelo
+!mkdir weights
+
+from huggingface_hub import hf_hub_download
+
+hf_hub_download(
+    repo_id="jesusromerodev/clasificacion-DBpedia-jesus-romero",
+    filename="checkpoint_mejor_modelo.pt",
+    local_dir="weights/"
+)
+
+!ls weights
+# Salida esperada: checkpoint_mejor_modelo.pt
+
 # %%

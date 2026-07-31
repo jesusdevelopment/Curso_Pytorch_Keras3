@@ -333,3 +333,5 @@ hf_hub_download(
 # Salida esperada: checkpoint_mejor_modelo.pt
 
 # %%
+torch.cuda.device_name(0)
+# %%

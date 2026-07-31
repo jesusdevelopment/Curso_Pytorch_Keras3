@@ -1,10 +1,12 @@
 # %% [markdown]
+# !pip install torch
 import torch
+import numpy as np
 # 1. Creación de Tensores básicos
 # Crear un tensor desde una lista
 data = [[1, 2], [3, 4]]
 x_data = torch.tensor(data)
-print(x_data)
+print(x_data) 
 print(x_data.shape)
 print(x_data.dtype)
 print(x_data.device)
@@ -89,7 +91,50 @@ print(f"matrix1 shape: {matrix1.shape}")
 print(f"matrix2 shape: {matrix2.shape}")
 
 # perform matrix multiplication
-print(torch.matmul(matrix1, matrix2).shape)
-matrix1@matrix2
-matrix1*matrix2
+#print(torch.matmul(matrix1, matrix2).shape)
+#matrix1@matrix2
+#matrix1*matrix2
+# %% [markdown]
+print(matriz.device)
+matriz_gpu=matriz.to('cuda')
+
+# %%
+print(matriz_gpu.device)
+# %%
+matrix1.device
+matrix1.to('cuda')
+print(matrix1.device)
+# %%
+torch.cuda.is_available()
+torch.cuda.get_device_name(0)
+ # %%
+matriz_cuda = matriz.to(torch.device('cuda'))
+matriz_cuda.device
+# %%
+# mm=np.array([[1, 2], [3, 4]])
+# mm.to_device('cuda')
+# %%
+matriz_numpy=np.array([[5, 6], [7, 8]])
+matriz_numpy.device
+# %%
+matriz_pytorch_tensor = torch.from_numpy(matriz_numpy).to('cuda')
+print(matriz_pytorch_tensor)
+# %%
+matriz_pytorch_tensor.device
+# matriz_pytorch_tensor.numpy()
+# %%
+matriz_pytorch_tensor.cpu().numpy()
+# %% [markdown]
+
+a= torch.tensor([[1., 2., 3.], [4., 5., 6.]],  )  
+# %%
+# Operaciones con tensores
+b = torch.tensor([[6., 7., 8.],[9.,10.,11.]], requires_grad=True)
+resultado = 3*a**3 + b**2
+print(resultado)
+
+# %%
+resultado.backward(gradient=torch.tensor([[1.,1.,1.],[1.,1.,1.]]))
+print(a.grad)
+print(b.grad)
 # %%

@@ -33,12 +33,41 @@ X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32)
 y_train_tensor = torch.tensor(y_train, dtype=torch.float32).view(-1, 1)
 X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32)
 y_test_tensor = torch.tensor(y_test, dtype=torch.float32).view(-1, 1)
-# %% [merkdown]
-# ## 4. Carga de Datos y Creación del Modelo
 
+# %% [markdown]
+# ## 4. Carga de Datos
 train_DataSet=TensorDataset(X_train_tensor, y_train_tensor)
 train_loader = DataLoader(train_DataSet, batch_size=32, shuffle=True)
 
+# %% [markdown]
+# ## 5. Creación del Modelo
+
+class SimpleModel(nn.Module):
+    def __init__(self, input_dim):
+        super(SimpleModel, self).__init__()
+        self.layer1 = nn.Linear(input_dim, 64)
+        self.relu = nn.ReLU()
+        self.layer2 = nn.Linear(64, 1)
+        
+    def forward(self, x):
+        x = self.relu(self.layer1(x))
+        x = self.layer2(x)
+        return x
 
 
-# %%
+model = SimpleModel(input_dim=X_train_tensor.shape[1])
+# %% [markdown]
+# ## 6. Definición de la Función de Pérdida y Optimizador
+criterion = nn.BCELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+# %%[markdown]
+# ## 7. Entrenamiento del Modelo
+num_epochs = 20
+for epoch in range(num_epochs):
+    model.train()
+    running_loss = 0.0
+    for X_batch, y_batch in train_loader:
+        optimizer.zero_grad()
+        # Forward pass
+        outputs = model(X_batch)
+        loss = criterion(outputs, y_batch.unsqueeze(1))

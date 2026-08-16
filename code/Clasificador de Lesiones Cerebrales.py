@@ -1,7 +1,6 @@
  # %% [mark down]
 ## Importación de Bibliotecas y Configuración de Entorno
 !pip install imagehash
-!pip install --upgrade keras  # Aseguramos tener Keras 3+
 !pip install torchmetrics -q
 
 import numpy as np
@@ -29,7 +28,7 @@ from torch.utils.data import DataLoader, Subset, Dataset, random_split
 from torchvision import transforms, datasets, models
 
 # Métricas agrupadas usando la API pública principal
-from torchmetrics import Accuracy, F1Score, ConfusionMatrix, MetricCollection
+from torchmetrics import Accuracy, Recall, F1Score, ConfusionMatrix, MetricCollection
 
 # %% [markdown]
 ## 1. Conexión con Google Drive y Carga de Datos
@@ -298,17 +297,18 @@ print(f"Imágenes para test: {len(test_dataset)}")
 # Cálculo del paralelismo óptimo
 num_workers = min(8, os.cpu_count() or 1)
 
-train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=2, persistent_workers=True)
-val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
-test_loader  = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2, pin_memory=True)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=2, persistent_workers=True)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
+test_loader  = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=2, pin_memory=True)
 
+# %% [markdown]
 # %% [markdown]
 # ## 4. Arquitectura de la CNN
 # Definición de la arquitectura CNN
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-class Classificador_Lesiones(nn.Module):
-    def __init__(self, num_classes):
+class Classificador_Manual(nn.Module):
+    def __init__(self, num_clases):
         super().__init__()
         self.features = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=3, padding=1),
@@ -316,18 +316,115 @@ class Classificador_Lesiones(nn.Module):
             nn.MaxPool2d(2, 2),
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.MaxPool2d(2, 2)
-        ).to(device)
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.MaxPool2d(2, 2),
+            nn.AdaptiveAvgPool2d(output_size=(2, 2)),
+            nn.Flatten()
+        )
         self.classifier = nn.Sequential(
-            nn.AdaptiveAvgPool2d(output_size=(1, 1)),
-            nn.Linear(64, 128), # Ajustar dimensiones según el tamaño de entrada
+            # Al usar AdaptiveAvgPool2d(2, 2), la salida plana es canales * alto * ancho
+            nn.Linear(128 * 2 * 2, 256), 
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(128, num_classes).to(device)
+            nn.Linear(256, num_clases)
         )
         
     def forward(self, x:torch.Tensor)->torch.Tensor:
         x = self.features(x)
-        x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
+
+from torchvision import models
+
+class MultiModeloTransfer(nn.Module):
+    def __init__(self, nombre_modelo, num_clases):
+        super().__init__()
+        self.nombre_modelo = nombre_modelo
+        
+        # ---------------------------------------------------------
+        # OPCIÓN 1: DenseNet121
+        # ---------------------------------------------------------
+        if self.nombre_modelo == 'densenet':
+            self.backbone = models.densenet121(weights=models.DenseNet121_Weights.DEFAULT)
+            self._congelar_pesos()
+            
+            num_ftrs = self.backbone.classifier.in_features
+            self.backbone.classifier = self._crear_cabeza_clasificacion(num_ftrs, num_clases)
+            
+        # ---------------------------------------------------------
+        # OPCIÓN 2: ResNet50
+        # ---------------------------------------------------------
+        elif self.nombre_modelo == 'resnet':
+            self.backbone = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+            self._congelar_pesos()
+            
+            num_ftrs = self.backbone.fc.in_features
+            self.backbone.fc = self._crear_cabeza_clasificacion(num_ftrs, num_clases)
+            
+        # ---------------------------------------------------------
+        # OPCIÓN 3: EfficientNet-B0
+        # ---------------------------------------------------------
+        elif self.nombre_modelo == 'efficientnet':
+            self.backbone = models.efficientnet_b0(weights=models.EfficientNet_B0_Weights.DEFAULT)
+            self._congelar_pesos()
+            
+            num_ftrs = self.backbone.classifier[1].in_features
+            self.backbone.classifier = self._crear_cabeza_clasificacion(num_ftrs, num_clases, es_efficientnet=True)
+            
+        else:
+            raise ValueError("Modelo no soportado. Elige 'densenet', 'resnet' o 'efficientnet'.")
+
+    def _congelar_pesos(self):
+        # Congela los parámetros convolucionales base
+        for param in self.backbone.parameters():
+            param.requires_grad = False
+
+    def _crear_cabeza_clasificacion(self, num_in_features, num_clases, es_efficientnet=False):
+        if es_efficientnet:
+            return nn.Sequential(
+                nn.Dropout(p=0.2, inplace=True),
+                nn.Linear(num_in_features, num_clases)
+            )
+        else:
+            return nn.Sequential(
+                nn.Dropout(0.3),
+                nn.Linear(num_in_features, 128),
+                nn.ReLU(),
+                nn.Linear(128, num_clases)
+            )
+
+    def forward(self, x):
+        return self.backbone(x)
+    
+# Instanciamos los modelos
+modelo_denso = MultiModeloTransfer('densenet', num_clases).to(device)
+modelo_residual = MultiModeloTransfer('resnet', num_clases).to(device)
+modelo_eficiente = MultiModeloTransfer('efficientnet', num_clases).to(device)
+
+# Tu clasificador manual original
+modelo_manual = Classificador_Manual(num_clases=num_clases).to(device)
+# %% [markdown]
+# ## Función de Pérdida, Optimizador y Scheduler
+
+# 1. Extraemos las etiquetas reales del Subset de entrenamiento
+etiquetas_train = [train_dataset.dataset.targets[i] for i in train_dataset.indices]
+
+# 2. Convertimos a tensor y contamos las frecuencias automáticamente
+etiquetas_tensor = torch.tensor(etiquetas_train)
+class_counts = torch.bincount(etiquetas_tensor).float()
+
+# 3. Tu lógica de pesos inversamente proporcionales
+class_weights = 1.0 / class_counts
+class_weights = class_weights / class_weights.sum()  # Normalización opcional
+
+print(f"Frecuencias calculadas: {class_counts.tolist()}")
+print(f"Pesos asignados: {class_weights.tolist()}")
+
+# 4. Instanciación en la GPU con Label Smoothing
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+criterion = nn.CrossEntropyLoss(
+    weight=class_weights.to(device),
+    label_smoothing=0.1  # Regularización para evitar probabilidades extremas
+)

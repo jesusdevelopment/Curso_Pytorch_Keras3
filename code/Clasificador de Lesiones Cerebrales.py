@@ -757,7 +757,7 @@ def evaluar_modelos_completo(
 
 # 9.1 Definición de modelos a evaluar
 diccionario_modelos = {
-    'CNN_Manual': modelo_manual,
+   # 'CNN_Manual': modelo_manual,
     'DenseNet121': modelo_denso,
     'ResNet50': modelo_residual,
     'EfficientNetB0': modelo_eficiente
@@ -801,7 +801,7 @@ for nombre, mod in diccionario_modelos.items():
         checkpoint_path=f"best_{nombre}_ft.pt"
     )
 
-    historia = trainer.fit(epochs=10, early_stopping_patience=3)
+    historia = trainer.fit(epochs=15, early_stopping_patience=3)
     
     trainers[nombre] = trainer
     historias[nombre] = historia
@@ -816,3 +816,6 @@ df_metricas_finales = evaluar_modelos_completo(
     clases=MIS_CLASES_BRAIN
 )
 
+
+# %%
+ 

@@ -1,5 +1,5 @@
 # %% [markdown]
-## Importación de Bibliotecas y Configuración de Entorno
+## 1. Importación de Bibliotecas y Configuración de Entorno
 !pip install imagehash
 !pip install torchmetrics -q
 
@@ -41,16 +41,16 @@ from sklearn.preprocessing import label_binarize
 # Métricas agrupadas usando la API pública principal
 from torchmetrics import Accuracy, Precision, Recall, F1Score, ConfusionMatrix, MetricCollection
 # %% [markdown]
-## 1. Conexión con Google Drive y Carga de Datos
+## 2. Conexión con Google Drive y Carga de Datos
 
 if not os.path.exists('/content/drive'):
     drive.mount('/content/drive')
 
-# Configuración de rutas
+# 2.1 Configuración de rutas
 ruta_rar = "/content/drive/MyDrive/Data/Curso Prof TensorFlow/dataset_extraido.rar"
 extract_dir = "/content/dataset_trabajo"
 
-# Proceso de extracción con limpieza previa
+# 2.2Proceso de extracción con limpieza previa
 if os.path.exists(ruta_rar):
     if os.path.exists(extract_dir):
         !rm -rf "{extract_dir}"
@@ -80,11 +80,11 @@ else:
     print(f"❌ ERROR: No se encontró el archivo en Drive: {ruta_rar}")
 
 # %% [markdown]
-## 2. EDA: Balanceo, Limpieza y Análisis Dimensional
+## 3. EDA: Balanceo, Limpieza y Análisis Dimensional
 
 print("\n--- INICIANDO EDA Y LIMPIEZA DE DATOS ---")
 
-# 5.1 Balanceo de Clases
+# 3.1 Balanceo de Clases
 sets = ['Training', 'Testing']
 MIS_CLASES_BRAIN = ['glioma', 'meningioma', 'notumor', 'pituitary']
 stats = []
@@ -113,7 +113,7 @@ else:
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.show()
 
-# 5.2 Detección de archivos Corruptos
+# 3.2 Detección de archivos Corruptos
 def check_images(directory):
     print("\nBuscando imágenes corruptas...")
     for root, dirs, files in os.walk(directory):
@@ -129,7 +129,7 @@ def check_images(directory):
 
 check_images(extract_dir)
 
-# 5.3 Detección de Archivos Duplicados (Hashing)
+# 3.3 Detección de Archivos Duplicados (Hashing)
 def eliminar_duplicados_visuales(directorio):
     print(f"\nBuscando duplicados visuales en: {directorio}")
     hashes_vistos = {}
@@ -156,7 +156,7 @@ def eliminar_duplicados_visuales(directorio):
 eliminar_duplicados_visuales(train_dir)
 eliminar_duplicados_visuales(test_dir)
 
-# 5.4 Análisis Dimensional (Tamaños y Proporciones)
+# 3.4 Análisis Dimensional (Tamaños y Proporciones)
 print("\nAnalizando dimensiones de las imágenes...")
 sets_to_analyze = ['Training', 'Testing']
 colors = {'Training': 'blue', 'Testing': 'orange'}
@@ -200,8 +200,8 @@ print(f"Total de imágenes para prueba (Test): {total_test}")
 print(f"Proporción de entrenamiento: {total_train / (total_train + total_test):.2f}")
 print(f"Proporción de prueba: {total_test / (total_train + total_test):.2f}")
 
-# 5.5 Análisis de Intensidad de Píxeles
-# 5.5 Análisis de Intensidad de Píxeles (Corregido)
+
+# 3.5 Análisis de Intensidad de Píxeles (Corregido)
 def analizar_intensidades(extract_dir, sets=['Training', 'Testing'], sample_size=300):
     plt.figure(figsize=(12, 6))
     colores = {'Training': 'blue', 'Testing': 'orange'}
@@ -247,10 +247,10 @@ def analizar_intensidades(extract_dir, sets=['Training', 'Testing'], sample_size
 analizar_intensidades(extract_dir)
 
 # %%[markdown]
-# ## 3. Carga de Datos
+## 4. Carga de Datos
 
 # ------------------------------------------------------------------
-# 1. DEFINICIÓN DE TRANSFORMACIONES
+# 4.1 DEFINICIÓN DE TRANSFORMACIONES
 # ------------------------------------------------------------------
 # Data Augmentation solo para entrenamiento
 train_transforms = transforms.Compose([
@@ -269,7 +269,7 @@ val_test_transforms = transforms.Compose([
 ])
 
 # ------------------------------------------------------------------
-# 2. CARGA DE LOS DATASETS (Con Split 80/20 para Validación)
+# 4.2 CARGA DE LOS DATASETS (Con Split 80/20 para Validación)
 # ------------------------------------------------------------------
 # Cargamos la misma carpeta 'train' DOS VECES con transformaciones diferentes
 dataset_para_train = datasets.ImageFolder(root=train_dir, transform=train_transforms)
@@ -302,7 +302,7 @@ print(f"Imágenes para validación: {len(val_dataset)}")
 print(f"Imágenes para test: {len(test_dataset)}")
 
 # ------------------------------------------------------------------
-# 3. CREACIÓN DE LOS DATALOADERS
+# 4.3 CREACIÓN DE LOS DATALOADERS
 # ------------------------------------------------------------------
 # Cálculo del paralelismo óptimo
 num_workers = min(8, os.cpu_count() or 1)
@@ -313,7 +313,7 @@ test_loader  = DataLoader(test_dataset, batch_size=64, shuffle=False, num_worker
 
 # %% [markdown]
 # %% [markdown]
-# ## 4. Arquitectura de la CNN
+## 5. Arquitectura de la CNN
 # Definición de la arquitectura CNN
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -443,30 +443,30 @@ modelo_manual = Classificador_Manual(num_classes=num_classes).to(device)
 print(modelo_manual)
 
 # %% [markdown]
-# ## Función de Pérdida, Optimizador y Scheduler
+## 6. Función de Pérdida, Optimizador y Scheduler
 
-# 1. Extraemos las etiquetas reales del Subset de entrenamiento
+# 6.1. Extraemos las etiquetas reales del Subset de entrenamiento
 etiquetas_train = [train_dataset.dataset.targets[i] for i in train_dataset.indices]
 
-# 2. Convertimos a tensor y contamos las frecuencias automáticamente
+# 6.2. Convertimos a tensor y contamos las frecuencias automáticamente
 etiquetas_tensor = torch.tensor(etiquetas_train)
 class_counts = torch.bincount(etiquetas_tensor).float()
 
-# 3. Tu lógica de pesos inversamente proporcionales
+# 6.3. Tu lógica de pesos inversamente proporcionales
 class_weights = 1.0 / class_counts
 class_weights = class_weights / class_weights.sum()  # Normalización opcional
 
 print(f"Frecuencias calculadas: {class_counts.tolist()}")
 print(f"Pesos asignados: {class_weights.tolist()}")
 
-# 4. Función de pérdida
+# 6.4. Función de pérdida
 criterion = nn.CrossEntropyLoss(
     weight=class_weights.to(device),
     label_smoothing=0.1  # Regularización para evitar probabilidades extremas
 )
-# 5. Optimizador y Scheduler
+# 6.5. Optimizador y Scheduler
 # %% [markdown]
-# ## 5. Bucle de Entrenamiento, Validación y Registro de Métricas
+## 7. Bucle de Entrenamiento, Validación y Registro de Métricas
 
 # --- CLASE EARLY STOPPING ---
 class EarlyStopping:
@@ -647,7 +647,7 @@ class EngineTrainer:
 
 
 # %% [markdown]
-# ## 2. Funciones Modulares de Evaluación y Métricas Visuales
+## 8. Funciones Modulares de Evaluación y Métricas Visuales
 
 def graficar_historias(historias: Dict[str, dict]):
     """Grafica la evolución de Loss y Accuracy en entrenamiento vs validación."""
@@ -698,15 +698,15 @@ def evaluar_modelos_completo(
     resumen_metricas = []
 
     for idx, (nombre, trainer) in enumerate(trainers_dict.items()):
-        # 1. Extraer predicciones y probabilidades softmax
+        # 8.1 Extraer predicciones y probabilidades softmax
         y_true, y_pred, y_probs = trainer.get_predictions(test_loader)
 
-        # 2. Imprimir reporte detallado de clasificación (Scikit-Learn)
+        # 8.2 Imprimir reporte detallado de clasificación (Scikit-Learn)
         print(f"\n==================== REPORTE DE EVALUACIÓN: {nombre.upper()} ====================")
         report_dict = classification_report(y_true, y_pred, target_names=clases, output_dict=True)
         print(classification_report(y_true, y_pred, target_names=clases, digits=4))
 
-        # Guardar resumen macro para tabla comparativa
+        # 8.3 Guardar resumen macro para tabla comparativa
         resumen_metricas.append({
             'Modelo': nombre,
             'Accuracy': report_dict['accuracy'],
@@ -716,7 +716,7 @@ def evaluar_modelos_completo(
             'ROC-AUC (Macro OvR)': roc_auc_score(y_true, y_probs, multi_class='ovr', average='macro')
         })
 
-        # 3. Matriz de Confusión
+        # 8.4 Matriz de Confusión
         cm = confusion_matrix(y_true, y_pred)
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes_cm[idx],
                     xticklabels=clases, yticklabels=clases)
@@ -724,7 +724,7 @@ def evaluar_modelos_completo(
         axes_cm[idx].set_xlabel('Predicción')
         axes_cm[idx].set_ylabel('Clase Real')
 
-        # 4. Curvas ROC-AUC Multiclase (One-vs-Rest)
+        # 8.5. Curvas ROC-AUC Multiclase (One-vs-Rest)
         y_true_bin = label_binarize(y_true, classes=list(range(num_clases)))
         
         for c_idx in range(num_clases):
@@ -753,9 +753,9 @@ def evaluar_modelos_completo(
 
 
 # %% [markdown]
-# ## 3. Ejecución Completa del Experimento
+## 9. Ejecución Completa del Experimento
 
-# 1. Definición de modelos a evaluar
+# 9.1 Definición de modelos a evaluar
 diccionario_modelos = {
     'CNN_Manual': modelo_manual,
     'DenseNet121': modelo_denso,
@@ -772,7 +772,7 @@ for nombre, mod in diccionario_modelos.items():
     if isinstance(mod, MultiModeloTransfer):
         # 1. Descongela bloques específicos (DenseNet, ResNet o EfficientNet)
         params_backbone, params_head = mod.descongelar_ultimos_bloques()
-        
+         
         # 2. Asigna LR diferenciado: bajo para el backbone, más alto para la cabeza
         optimizer_model = torch.optim.AdamW([
             {'params': params_backbone, 'lr': 1e-5},

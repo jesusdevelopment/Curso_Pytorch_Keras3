@@ -310,7 +310,16 @@ num_workers = min(8, os.cpu_count() or 1)
 train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=2, persistent_workers=True)
 val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
 test_loader  = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=2, pin_memory=True)
+# %% [markdown]
+## Visualización de 5 muestras iniciales
+images, labels = next(iter(train_loader))
 
+plt.figure(figsize=(10, 10))
+for i in range(5):
+    ax = plt.subplot(1, 5, i + 1)
+    # Permute from [C, H, W] to [H, W, C] for Matplotlib
+    plt.imshow(images[i].permute(1, 2, 0).numpy())
+    plt.title(f"Label: {labels[i].item()}")
 # %% [markdown]
 # %% [markdown]
 ## 5. Arquitectura de la CNN

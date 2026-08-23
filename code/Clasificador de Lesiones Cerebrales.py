@@ -1,7 +1,8 @@
 # %% [markdown]
-## 1. Importación de Bibliotecas y Configuración de Entorno
-!pip install imagehash
+## 1. Library Imports
+!pip install imagehash -q
 !pip install torchmetrics -q
+!pip install grad_cam -q
 
 import numpy as np
 import pandas as pd
@@ -23,12 +24,15 @@ import os
 import time
 from typing import Optional, Tuple, Dict, List  # <-- AÑADIDO: Tipos para type hints
 
-# Importaciones de Machine Learning
+# Machine Learning
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Subset, Dataset, random_split
 from torchvision import transforms, datasets, models
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+from pytorch_grad_cam.utils.image import show_cam_on_image
 from sklearn.metrics import (
     classification_report, 
     confusion_matrix, 
@@ -38,19 +42,19 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import label_binarize
 
-# Métricas agrupadas usando la API pública principal
+
 from torchmetrics import Accuracy, Precision, Recall, F1Score, ConfusionMatrix, MetricCollection
 # %% [markdown]
-## 2. Conexión con Google Drive y Carga de Datos
+## 2. Google Drive 
 
 if not os.path.exists('/content/drive'):
     drive.mount('/content/drive')
 
-# 2.1 Configuración de rutas
+# 2.1 Paths
 ruta_rar = "/content/drive/MyDrive/Data/Curso Prof TensorFlow/dataset_extraido.rar"
 extract_dir = "/content/dataset_trabajo"
 
-# 2.2Proceso de extracción con limpieza previa
+# 2.2
 if os.path.exists(ruta_rar):
     if os.path.exists(extract_dir):
         !rm -rf "{extract_dir}"
@@ -80,11 +84,11 @@ else:
     print(f"❌ ERROR: No se encontró el archivo en Drive: {ruta_rar}")
 
 # %% [markdown]
-## 3. EDA: Balanceo, Limpieza y Análisis Dimensional
+## 3. EDA
 
 print("\n--- INICIANDO EDA Y LIMPIEZA DE DATOS ---")
 
-# 3.1 Balanceo de Clases
+# 3.1 Classes Balance
 sets = ['Training', 'Testing']
 MIS_CLASES_BRAIN = ['glioma', 'meningioma', 'notumor', 'pituitary']
 stats = []
@@ -113,7 +117,7 @@ else:
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     plt.show()
 
-# 3.2 Detección de archivos Corruptos
+# 3.2 Corrupts Files detection
 def check_images(directory):
     print("\nBuscando imágenes corruptas...")
     for root, dirs, files in os.walk(directory):
@@ -129,7 +133,7 @@ def check_images(directory):
 
 check_images(extract_dir)
 
-# 3.3 Detección de Archivos Duplicados (Hashing)
+# 3.3 Hashing
 def eliminar_duplicados_visuales(directorio):
     print(f"\nBuscando duplicados visuales en: {directorio}")
     hashes_vistos = {}
@@ -156,13 +160,13 @@ def eliminar_duplicados_visuales(directorio):
 eliminar_duplicados_visuales(train_dir)
 eliminar_duplicados_visuales(test_dir)
 
-# 3.4 Análisis Dimensional (Tamaños y Proporciones)
+# 3.4 
 print("\nAnalizando dimensiones de las imágenes...")
 sets_to_analyze = ['Training', 'Testing']
 colors = {'Training': 'blue', 'Testing': 'orange'}
 plt.figure(figsize=(10, 6))
 
-widths, heights = [], [] # Para el resumen numérico global
+widths, heights = [], [] 
 
 for dataset_type in sets_to_analyze:
     w_temp, h_temp = [], []
@@ -212,7 +216,7 @@ def analizar_intensidades(extract_dir, sets=['Training', 'Testing'], sample_size
         all_files = []
         for root, dirs, files in os.walk(dataset_path):
             for file in files:
-                # Permite imágenes .png, .jpeg y .jpg
+              
                 if file.lower().endswith(('.jpg', '.jpeg', '.png')):
                     all_files.append(os.path.join(root, file))
         
@@ -226,7 +230,7 @@ def analizar_intensidades(extract_dir, sets=['Training', 'Testing'], sample_size
         for img_path in sampled_files:
             img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
             if img is not None:
-                # .ravel() aplana el resultado a un vector 1D de (256,)
+                
                 hist = cv2.calcHist([img], [0], None, [256], [0, 256]).ravel()
                 hist_acumulado += hist
         
@@ -247,7 +251,7 @@ def analizar_intensidades(extract_dir, sets=['Training', 'Testing'], sample_size
 analizar_intensidades(extract_dir)
 
 # %%[markdown]
-## 4. Carga de Datos
+## 4. Data Loading
 
 # ------------------------------------------------------------------
 # 4.1 DEFINICIÓN DE TRANSFORMACIONES
@@ -267,6 +271,10 @@ val_test_transforms = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
+# Para visualización, definimos una transformación sin normalización para mantener los valores de píxeles originales:
+vis_transforms = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor()])
 
 # ------------------------------------------------------------------
 # 4.2 CARGA DE LOS DATASETS (Con Split 80/20 para Validación)
@@ -274,7 +282,7 @@ val_test_transforms = transforms.Compose([
 # Cargamos la misma carpeta 'train' DOS VECES con transformaciones diferentes
 dataset_para_train = datasets.ImageFolder(root=train_dir, transform=train_transforms)
 dataset_para_val   = datasets.ImageFolder(root=train_dir, transform=val_test_transforms)
-
+train_dataset_image=  datasets.ImageFolder(root=train_dir, transform=vis_transforms)
 # Calculamos los tamaños para el split (80% train, 20% val)
 total_size = len(dataset_para_train)
 val_size = int(0.2 * total_size)
@@ -307,19 +315,32 @@ print(f"Imágenes para test: {len(test_dataset)}")
 # Cálculo del paralelismo óptimo
 num_workers = min(8, os.cpu_count() or 1)
 
+image_loader = DataLoader(train_dataset_image, batch_size=64, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=2, persistent_workers=True)
 train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=num_workers, pin_memory=True, prefetch_factor=2, persistent_workers=True)
 val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=True)
 test_loader  = DataLoader(test_dataset, batch_size=64, shuffle=False, num_workers=2, pin_memory=True)
 # %% [markdown]
 ## Visualización de 5 muestras iniciales
-images, labels = next(iter(train_loader))
 
-plt.figure(figsize=(10, 10))
+images, labels = next(iter(image_loader))
+plt.figure(figsize=(12, 12))
 for i in range(5):
     ax = plt.subplot(1, 5, i + 1)
-    # Permute from [C, H, W] to [H, W, C] for Matplotlib
+    
+    # Permutar de [C, H, W] a [H, W, C] para Matplotlib
     plt.imshow(images[i].permute(1, 2, 0).numpy())
-    plt.title(f"Label: {labels[i].item()}")
+    
+    # Obtener el nombre de la clase usando el índice numérico del label
+    # Opción A (Usando la lista que ya tienes definida):
+    nombre_clase = MIS_CLASES_BRAIN[labels[i].item()]
+    
+    # Opción B (Usando la propiedad nativa del dataset de PyTorch):
+    # nombre_clase = train_dataset_image.classes[labels[i].item()]
+    
+    plt.title(f"Clase: {nombre_clase}")
+    plt.axis("off")
+
+plt.show()
 # %% [markdown]
 # %% [markdown]
 ## 5. Arquitectura de la CNN
@@ -824,7 +845,98 @@ df_metricas_finales = evaluar_modelos_completo(
     test_loader=test_loader,
     clases=MIS_CLASES_BRAIN
 )
+# %%[markdown]
+# ##. Grand-Cam
 
+# %% [markdown]
+# ## 8. Visualización con Grad-CAM
+# Para visualizar las regiones de interés en las imágenes, utilizaremos Grad-CAM.
+# Esto nos permite entender qué partes de la imagen están activando la predicción del modelo.
+# Importamos las librerías necesarias para Grad-CAM
 
-# %%
+def evaluar_por_categorias_gradcam_seguro(trainers_dict, test_loader, clases):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 1. Configurar los objetos Grad-CAM para cada modelo
+    cams = {}
+    for nombre_modelo, trainer in trainers_dict.items():
+        modelo_wrapper = trainer.model
+        modelo_wrapper.to(device)
+        modelo_wrapper.eval()
+        red_interna = modelo_wrapper.backbone
+        
+        if "ResNet" in nombre_modelo:
+            target_layers = [red_interna.layer4[-1]]
+        elif "DenseNet" in nombre_modelo or "EfficientNet" in nombre_modelo:
+            target_layers = [red_interna.features[-1]]
+        else:
+            raise ValueError(f"Arquitectura {nombre_modelo} no soportada.")
+            
+        cams[nombre_modelo] = GradCAM(model=modelo_wrapper, target_layers=target_layers)
+
+    # 2. Búsqueda robusta de una muestra por cada categoría disponible
+    muestras_por_clase = {}
+    clases_objetivo = set(range(len(clases)))
+    
+    for images, labels in test_loader:
+        for img, label in zip(images, labels):
+            clase_idx = label.item()
+            if clase_idx in clases_objetivo and clase_idx not in muestras_por_clase:
+                muestras_por_clase[clase_idx] = img
+            if len(muestras_por_clase) == len(clases):
+                break
+        if len(muestras_por_clase) == len(clases):
+            break
+
+    print(f"✅ Se encontraron muestras para las clases: {[clases[k] for k in muestras_por_clase.keys()]}")
+
+    # 3. Iterar sobre cada categoría encontrada y generar su comparativa
+    for clase_idx, input_tensor in muestras_por_clase.items():
+        input_tensor = input_tensor.unsqueeze(0).to(device)
+        nombre_clase_real = clases[clase_idx]
+        
+        print(f"\n------------------------------------------")
+        print(f" Evaluando Categoría: {nombre_clase_real}")
+        print(f"------------------------------------------")
+        
+        num_columnas = len(trainers_dict) + 1
+        fig, axes = plt.subplots(1, num_columnas, figsize=(4 * num_columnas, 5))
+        
+        # Columna 0: Imagen Original Limpia
+        img_original = input_tensor.squeeze().cpu().permute(1, 2, 0).numpy()
+        mean = np.array([0.485, 0.456, 0.406])
+        std = np.array([0.229, 0.224, 0.225])
+        img_original = np.clip(std * img_original + mean, 0, 1)
+        
+        axes[0].imshow(img_original)
+        axes[0].set_title(f"Imagen Original\nReal: {nombre_clase_real}", color='blue', fontweight='bold', fontsize=11)
+        axes[0].axis('off')
+        
+        # Columnas Restantes: Modelos con Grad-CAM
+        for idx, (nombre_modelo, trainer) in enumerate(trainers_dict.items()):
+            modelo_wrapper = trainer.model
+            
+            with torch.no_grad():
+                salida = modelo_wrapper(input_tensor)
+                pred_idx = salida.argmax(dim=1).item()
+                
+            targets = [ClassifierOutputTarget(pred_idx)]
+            grayscale_cam = cams[nombre_modelo](input_tensor=input_tensor, targets=targets)[0, :]
+            
+            visualization = show_cam_on_image(img_original, grayscale_cam, use_rgb=True)
+            
+            ax = axes[idx + 1]
+            ax.imshow(visualization)
+            
+            color_texto = "green" if clase_idx == pred_idx else "red"
+            ax.set_title(f"{nombre_modelo}\nPred: {clases[pred_idx]}", color=color_texto, fontweight='bold', fontsize=11)
+            ax.axis('off')
+            
+        plt.suptitle(f"Evaluación de Lesión: {nombre_clase_real.upper()}", fontsize=15, fontweight='bold', y=1.02)
+        plt.tight_layout()
+        plt.show()
+
+# --- EJECUCIÓN ---
+evaluar_por_categorias_gradcam_seguro(trainers, test_loader, MIS_CLASES_BRAIN)
  
+# %%

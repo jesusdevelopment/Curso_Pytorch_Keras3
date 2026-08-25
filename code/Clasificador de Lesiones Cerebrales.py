@@ -28,6 +28,7 @@ from typing import Optional, Tuple, Dict, List  # <-- AÑADIDO: Tipos para type 
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Subset, Dataset, random_split
 from torchvision import transforms, datasets, models
 from pytorch_grad_cam import GradCAM
@@ -939,4 +940,176 @@ def evaluar_por_categorias_gradcam_seguro(trainers_dict, test_loader, clases):
 # --- EJECUCIÓN ---
 evaluar_por_categorias_gradcam_seguro(trainers, test_loader, MIS_CLASES_BRAIN)
  
+# %% [markdown]
+# ##. Inferencia
+
+def predecir_y_mostrar_imagen(ruta_imagen, nombre_modelo, trainer_dict, clases, transformacion_val):
+    """
+    Realiza inferencia sobre una única imagen nueva, muestra la imagen gráficamente 
+    y desglosa las probabilidades del modelo.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    
+    # 1. Recuperar el modelo del diccionario de trainers y ponerlo en modo evaluación
+    if nombre_modelo not in trainer_dict:
+        raise ValueError(f"El modelo '{nombre_modelo}' no se encuentra en el diccionario de trainers.")
+        
+    trainer = trainer_dict[nombre_modelo]
+    modelo = trainer.model
+    modelo.to(device)
+    modelo.eval()
+    
+    # Cargar los mejores pesos guardados en disco si existen
+    checkpoint_path = f"best_{nombre_modelo}_ft.pt"
+    if os.path.exists(checkpoint_path):
+        modelo.load_state_dict(torch.load(checkpoint_path, map_location=device))
+    
+    # 2. Cargar la imagen original (para mostrarla) y preprocesar la versión para el modelo
+    if not os.path.exists(ruta_imagen):
+        raise FileNotFoundError(f"No se encontró la imagen en la ruta: {ruta_imagen}")
+        
+    imagen_pil = Image.open(ruta_imagen).convert("RGB")
+    tensor_imagen = transformacion_val(imagen_pil).unsqueeze(0).to(device)
+    
+    # 3. Inferencia (Forward Pass sin gradientes)
+    with torch.no_grad():
+        outputs = modelo(tensor_imagen)
+        probabilidades = F.softmax(outputs, dim=1)[0]
+        confianza_pred, clase_pred_idx = torch.max(probabilidades, dim=0)
+        
+    clase_predicha = clases[clase_pred_idx.item()]
+    confianza_porcentaje = confianza_pred.item() * 100
+    
+    # 4. Mostrar la imagen en pantalla con Matplotlib
+    plt.figure(figsize=(5, 5))
+    plt.imshow(imagen_pil)
+    color_titulo = "green" # Puedes ajustarlo si sabes la clase real de antemano
+    plt.title(f"Modelo: {nombre_modelo}\nPredicción: {clase_predicha.upper()} ({confianza_porcentaje:.1f}%)", 
+              fontsize=12, fontweight='bold', color='darkblue')
+    plt.axis('off')
+    plt.show()
+    
+    # 5. Imprimir resultados detallados en consola
+    print(f"\n==================================================")
+    print(f" 🩺 RESULTADO DE INFERENCIA ({nombre_modelo.upper()})")
+    print(f"==================================================")
+    print(f"📁 Archivo analizado: {os.path.basename(ruta_imagen)}")
+    print(f"🏆 Predicción Final:   {clase_predicha.upper()} ({confianza_porcentaje:.2f}% de confianza)")
+    print(f"--------------------------------------------------")
+    print("📊 Desglose de probabilidades por clase:")
+    for idx, clase in enumerate(clases):
+        prob = probabilidades[idx].item() * 100
+        print(f"   - {clase:<12}: {prob:5.2f}%")
+    print(f"==================================================")
+    
+    return clase_predicha, probabilidades.cpu().numpy()
+
+# --- EJEMPLO DE USO ---
+ruta_prueba = "/content/drive/MyDrive/Data/Curso de Redes Neuronales Convolucionales/GBM.jpeg"
+
+predecir_y_mostrar_imagen(
+    ruta_imagen=ruta_prueba, 
+    nombre_modelo='ResNet50', 
+    trainer_dict=trainers, 
+    clases=MIS_CLASES_BRAIN, 
+    transformacion_val=val_test_transforms
+)
+# %%[markdown]
+# ## Localización de imágenes erradas de gliomas
+
+def analizar_errores_con_gradcam(modelo, dataloader, dataset, clases, num_ejemplos=3):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    modelo.to(device)
+    modelo.eval()
+    
+    idx_glioma = clases.index('glioma')
+    idx_meningioma = clases.index('meningioma')
+    idx_notumor = clases.index('notumor')
+    
+    rutas_archivos = [item[0] for item in dataset.samples]
+    
+    print("🔍 1. Escaneando el dataset de prueba en busca de errores...")
+    rutas_g_a_m = [] 
+    rutas_g_a_nt = []
+    
+    with torch.no_grad():
+        for i, (images, labels) in enumerate(dataloader):
+            images = images.to(device)
+            outputs = modelo(images)
+            _, preds = torch.max(outputs, 1)
+            
+            for j in range(len(labels)):
+                idx_global = i * dataloader.batch_size + j
+                real = labels[j].item()
+                pred = preds[j].item()
+                
+                # Prevenir errores si el último batch es más pequeño
+                if idx_global < len(rutas_archivos): 
+                    ruta = rutas_archivos[idx_global]
+                    if real == idx_glioma and pred == idx_meningioma:
+                        rutas_g_a_m.append(ruta)
+                    elif real == idx_glioma and pred == idx_notumor:
+                        rutas_g_a_nt.append(ruta)
+
+    print(f"⚠️ Encontrados: {len(rutas_g_a_m)} Glioma->Meningioma | {len(rutas_g_a_nt)} Glioma->NoTumor")
+    print("🔥 2. Generando mapas de activación (Grad-CAM)...")
+
+    # Configurar Grad-CAM para ResNet50 (apuntando a la última capa convolucional)
+    target_layers = [modelo.backbone.layer4[-1]]
+    cam = GradCAM(model=modelo, target_layers=target_layers)
+
+    # Transformaciones estándar para pasar la imagen al modelo
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+
+    def visualizar_lista_errores(rutas, titulo_error):
+        if not rutas: return
+        
+        fig, axes = plt.subplots(1, min(len(rutas), num_ejemplos), figsize=(15, 5))
+        if num_ejemplos == 1: axes = [axes] # Manejo de un solo plot
+        fig.suptitle(f"Análisis Grad-CAM: {titulo_error}", fontsize=16, weight='bold')
+
+        for idx, ruta in enumerate(rutas[:num_ejemplos]):
+            # 1. Cargar imagen original para el fondo (rgb, float [0,1])
+            img_pil = Image.open(ruta).convert('RGB')
+            img_redimensionada = img_pil.resize((224, 224))
+            rgb_img = np.float32(img_redimensionada) / 255
+            
+            # 2. Preparar tensor para el modelo
+            input_tensor = transform(img_pil).unsqueeze(0).to(device)
+            
+            # 3. Generar máscara Grad-CAM
+            grayscale_cam = cam(input_tensor=input_tensor, targets=None)
+            grayscale_cam = grayscale_cam[0, :]
+            
+            # 4. Superponer mapa de calor en la imagen original
+            visualization = show_cam_on_image(rgb_img, grayscale_cam, use_rgb=True)
+            
+            axes[idx].imshow(visualization)
+            axes[idx].set_title(f"Error {idx+1}")
+            axes[idx].axis('off')
+            
+        plt.tight_layout()
+        plt.show()
+
+    # Mostrar resultados
+    visualizar_lista_errores(rutas_g_a_m, "Real: GLIOMA | Predicción: MENINGIOMA")
+    visualizar_lista_errores(rutas_g_a_nt, "Real: GLIOMA | Predicción: NOTUMOR")
+
+
+# --- EJECUCIÓN ---
+CLASES_UNIFICADAS = ['glioma', 'meningioma', 'notumor', 'pituitary']
+modelo_evaluar = modelo_residual # Reemplaza con la variable de tu ResNet50
+
+analizar_errores_con_gradcam(
+    modelo=modelo_evaluar, 
+    dataloader=test_loader, 
+    dataset=test_dataset, 
+    clases=CLASES_UNIFICADAS,
+    num_ejemplos=3 # Cambia esto si quieres ver más o menos imágenes
+)
+
 # %%

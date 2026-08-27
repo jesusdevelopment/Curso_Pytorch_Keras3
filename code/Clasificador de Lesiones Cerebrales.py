@@ -42,8 +42,6 @@ from sklearn.metrics import (
     roc_auc_score
 )
 from sklearn.preprocessing import label_binarize
-
-
 from torchmetrics import Accuracy, Precision, Recall, F1Score, ConfusionMatrix, MetricCollection
 # %% [markdown]
 ## 2. Google Drive 
@@ -263,7 +261,8 @@ train_transforms = transforms.Compose([
     transforms.RandomHorizontalFlip(),
     transforms.RandomRotation(15),
     transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    transforms.RandomErasing(p=0.7, scale=(0.10, 0.33), value=0)
 ])
 
 # Para Validación y Test solo redimensionamos y normalizamos
@@ -444,9 +443,8 @@ class MultiModeloTransfer(nn.Module):
             ]
             
         elif self.nombre_modelo == 'efficientnet':
-            # EfficientNet-B0 tiene 9 bloques secuenciales en .features (índices 0 a 8)
-            # Descongelamos los últimos 3 bloques (índices 6, 7 y 8)
-            bloques_a_descongelar = [self.backbone.features[6:]]
+    # EfficientNet-B0: Descongelar los bloques 6, 7 y 8
+            bloques_a_descongelar = list(self.backbone.features[6:])
 
         # Aplicar el cambio de estado a los parámetros seleccionados
         for bloque in bloques_a_descongelar:

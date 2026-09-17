@@ -43,8 +43,8 @@ data_transforms = {
 data_set='hymenoptera_data'
 image_datasets = {x: datasets.ImageFolder(os.path.join(data_set, x), data_transforms[x]) for x in ['train', 'val']}
 dataloaders = {
-    'train': torch.utils.data.DataLoader(image_datasets['train'], batch_size=4, shuffle=True,  num_workers=4, pin_memory=True),
-    'val':   torch.utils.data.DataLoader(image_datasets['val'],   batch_size=4, shuffle=False, num_workers=4, pin_memory=True)
+    'train': torch.utils.data.DataLoader(image_datasets['train'], batch_size=16, shuffle=True,  num_workers=4, pin_memory=True),
+    'val':   torch.utils.data.DataLoader(image_datasets['val'],   batch_size=16, shuffle=False, num_workers=4, pin_memory=True)
 }
 dataset_sizes = {x: len(image_datasets[x]) for x in ['train', 'val']}
 class_names = image_datasets['train'].classes
@@ -68,4 +68,17 @@ inputs, classes = next(iter(dataloaders['train']))
 # Make a grid from batch
 out = utils.make_grid(inputs)
 imshow(out, title=[class_names[x] for x in classes])
-# %%
+# %% [markdown]
+# Entrenamiento del modelo de Transfer Learning usando RESNET50
+
+class Model(nn.Module):
+    def __init__(self, num_classes):
+        super().__init__()
+        self.resnet = models.resnet50(pretrained=True)
+        # Congelar los parámetros de las capas base
+        for param in self.resnet.parameters():
+            param.requires_grad = False
+
+# Reemplazar la última capa (fc) para adaptarla al número de clases
+
+
